@@ -75,15 +75,15 @@ try {
   const totalForks = own.reduce((a, r) => a + (r.forks_count || 0), 0);
 
   // Languages (first 30 repos)
-  const langs = [];
-  for (const r of own.slice(0, 30)) {
-    const { data } = await octokit.rest.repos.getLanguages({
-      owner: username,
-      repo: r.name,
-    });
-    langs.push(data || {});
-  }
-  const langAgg = aggregateLanguages(langs);
+const langs = [];
+for (const r of own.slice(0, 30)) {
+  const { data } = await octokit.request("GET /repos/{owner}/{repo}/languages", {
+    owner: username,
+    repo: r.name
+  });
+  langs.push(data || {});
+}
+const langAgg = aggregateLanguages(langs);
 
   // Last 5 repos
   const recent5 = own.slice(0, 5).map((r) => ({
