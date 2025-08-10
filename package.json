@@ -1,0 +1,12 @@
+{
+  "name": "daily-maintenance-bot",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "update": "node scripts/update-readme.js"
+  },
+  "dependencies": {
+    "@octokit/rest": "^20.1.0",
+    "p-limit": "^6.1.0"
+  }
+}
