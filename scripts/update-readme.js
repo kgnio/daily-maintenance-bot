@@ -142,14 +142,16 @@ try {
     .slice(0, 10);
 
   // Markdown blocks (FORCE UPDATE ile her run'da değişiklik garanti)
-  const forceToken = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const summary = [
-    `**Update:** ${nowISO}`,
-    `**Force Update Token:** ${forceToken}`,
-    `**Total Public Repos:** ${own.length}`,
-    `**Total Stars:** ${totalStars} • **Total Forks:** ${totalForks}`,
-    `**Open Issues:** ${totalOpenIssues} • **Open PRs:** ${totalOpenPRs}`,
-  ].join("  \n");
+const forceToken = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const summary = [
+  `**Update:** ${nowISO}`,
+  `**Last run (UTC):** ${now.toUTCString()}`,
+  `**Force Update Token:** ${forceToken}`,
+  `**Total Public Repos:** ${own.length}`,
+  `**Total Stars:** ${totalStars} • **Total Forks:** ${totalForks}`,
+  `**Open Issues:** ${totalOpenIssues} • **Open PRs:** ${totalOpenPRs}`,
+].join("  \n");
+
 
   const langsMd = mdTable(langAgg.map((x) => ({ Language: x.lang, Percentage: x.pct })));
   const recentMd = mdTable(recent5);
