@@ -7,16 +7,15 @@ if (!TOKEN) {
   console.error("Missing GH_PAT/GITHUB_TOKEN");
   process.exit(1);
 }
+
 const octokit = new Octokit({ auth: TOKEN });
-const limit = pLimit(6); // GitHub API için makul paralellik
+const limit = pLimit(6); 
 
 function mdTable(rows) {
   if (!rows.length) return "";
   const header = Object.keys(rows[0]);
   const sep = header.map(() => "---");
-  const body = rows.map((r) =>
-    header.map((h) => String(r[h] ?? "")).join(" | ")
-  );
+  const body = rows.map((r) => header.map((h) => String(r[h] ?? "")).join(" | "));
   return [header.join(" | "), sep.join(" | "), ...body].join("\n");
 }
 
@@ -26,13 +25,7 @@ function insertBetweenMarkers(content, start, end, block) {
   const startIdx = content.indexOf(s);
   const endIdx = content.indexOf(e);
   if (startIdx === -1 || endIdx === -1 || endIdx < startIdx) return content;
-  return (
-    content.slice(0, startIdx + s.length) +
-    "\n" +
-    block +
-    "\n" +
-    content.slice(endIdx)
-  );
+  return content.slice(0, startIdx + s.length) + "\n" + block + "\n" + content.slice(endIdx);
 }
 
 function aggregateLanguages(langMaps) {
@@ -42,15 +35,13 @@ function aggregateLanguages(langMaps) {
   }
   const sum = Object.values(total).reduce((a, b) => a + b, 0) || 1;
   return Object.entries(total)
-    .map(([lang, bytes]) => ({
-      lang,
-      pct: ((bytes / sum) * 100).toFixed(1) + "%",
-    }))
+    .map(([lang, bytes]) => ({ lang, pct: ((bytes / sum) * 100).toFixed(1) + "%" }))
     .sort((a, b) => parseFloat(b.pct) - parseFloat(a.pct))
     .slice(0, 10);
 }
 
-const nowISO = new Date().toISOString();
+const now = new Date();
+const nowISO = now.toISOString();
 
 try {
   // 1) Identity
@@ -58,32 +49,29 @@ try {
   const username = me.login;
 
   // 2) Repos (owned, public)
-  const repos = await octokit.paginate(
-    octokit.rest.repos.listForAuthenticatedUser,
-    {
-      visibility: "public",
-      per_page: 100,
-      affiliation: "owner",
-      sort: "pushed",
-      direction: "desc",
-    }
-  );
+  const repos = await octokit.paginate(octokit.rest.repos.listForAuthenticatedUser, {
+    visibility: "public",
+    per_page: 100,
+    affiliation: "owner",
+    sort: "pushed",
+    direction: "desc",
+  });
   const own = repos.filter((r) => !r.fork);
 
   // Totals
   const totalStars = own.reduce((a, r) => a + (r.stargazers_count || 0), 0);
   const totalForks = own.reduce((a, r) => a + (r.forks_count || 0), 0);
 
-  // Languages (first 30 repos)
-const langs = [];
-for (const r of own.slice(0, 30)) {
-  const { data } = await octokit.request("GET /repos/{owner}/{repo}/languages", {
-    owner: username,
-    repo: r.name
-  });
-  langs.push(data || {});
-}
-const langAgg = aggregateLanguages(langs);
+  // Languages (first 30 repos) — request API (getLanguages bazı sürümlerde yok)
+  const langs = [];
+  for (const r of own.slice(0, 30)) {
+    const { data } = await octokit.request("GET /repos/{owner}/{repo}/languages", {
+      owner: username,
+      repo: r.name,
+    });
+    langs.push(data || {});
+  }
+  const langAgg = aggregateLanguages(langs);
 
   // Last 5 repos
   const recent5 = own.slice(0, 5).map((r) => ({
@@ -93,13 +81,12 @@ const langAgg = aggregateLanguages(langs);
     Updated: new Date(r.pushed_at).toISOString().split("T")[0],
   }));
 
-  // ===== New: Issues & PRs summary =====
+  // Issues & PRs summary
   let totalOpenIssues = 0;
   let totalOpenPRs = 0;
   await Promise.all(
     own.map((r) =>
       limit(async () => {
-        // open issues (excluding PRs is tricky if using open_issues_count; do explicit calls)
         const pulls = await octokit.paginate(octokit.rest.pulls.list, {
           owner: username,
           repo: r.name,
@@ -114,29 +101,26 @@ const langAgg = aggregateLanguages(langs);
           state: "open",
           per_page: 100,
         });
-        // Filter out PRs from issues list (issues API returns PRs with pull_request field)
         totalOpenIssues += issues.filter((i) => !i.pull_request).length;
       })
     )
   );
 
-  // ===== New: Top Contributors (aggregate across top 5 repos by stars) =====
+  // Top Contributors (across top 5 repos by stars)
   const topRepos = [...own]
     .sort((a, b) => (b.stargazers_count || 0) - (a.stargazers_count || 0))
     .slice(0, 5);
-  const contributorMap = new Map(); // key: login, value: {login, url, avatar, contributions}
+
+  const contributorMap = new Map(); // login -> {login, url, avatar, contributions}
   await Promise.all(
     topRepos.map((r) =>
       limit(async () => {
-        const contributors = await octokit.paginate(
-          octokit.rest.repos.listContributors,
-          {
-            owner: username,
-            repo: r.name,
-            per_page: 100,
-            anon: false,
-          }
-        );
+        const contributors = await octokit.paginate(octokit.rest.repos.listContributors, {
+          owner: username,
+          repo: r.name,
+          per_page: 100,
+          anon: false,
+        });
         for (const c of contributors) {
           if (!c.login) continue;
           const key = c.login.toLowerCase();
@@ -152,23 +136,23 @@ const langAgg = aggregateLanguages(langs);
       })
     )
   );
+
   const topContribs = [...contributorMap.values()]
     .sort((a, b) => b.contributions - a.contributions)
     .slice(0, 10);
 
-  // Markdown blocks
+  // Markdown blocks (FORCE UPDATE ile her run'da değişiklik garanti)
+  const forceToken = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const summary = [
     `**Update:** ${nowISO}`,
+    `**Force Update Token:** ${forceToken}`,
     `**Total Public Repos:** ${own.length}`,
     `**Total Stars:** ${totalStars} • **Total Forks:** ${totalForks}`,
     `**Open Issues:** ${totalOpenIssues} • **Open PRs:** ${totalOpenPRs}`,
   ].join("  \n");
 
-  const langsMd = mdTable(
-    langAgg.map((x) => ({ Language: x.lang, Percentage: x.pct }))
-  );
+  const langsMd = mdTable(langAgg.map((x) => ({ Language: x.lang, Percentage: x.pct })));
   const recentMd = mdTable(recent5);
-
   const contribsMd =
     mdTable(
       topContribs.map((c) => ({
@@ -179,26 +163,10 @@ const langAgg = aggregateLanguages(langs);
 
   // Load README, update sections
   let readme = await fs.readFile("README.md", "utf8");
-
   readme = insertBetweenMarkers(readme, "STATS:START", "STATS:END", summary);
-  readme = insertBetweenMarkers(
-    readme,
-    "LANGS:START",
-    "LANGS:END",
-    langsMd || "_No data found_"
-  );
-  readme = insertBetweenMarkers(
-    readme,
-    "RECENT:START",
-    "RECENT:END",
-    recentMd || "_No data found_"
-  );
-  readme = insertBetweenMarkers(
-    readme,
-    "CONTRIB:START",
-    "CONTRIB:END",
-    contribsMd
-  );
+  readme = insertBetweenMarkers(readme, "LANGS:START", "LANGS:END", langsMd || "_No data found_");
+  readme = insertBetweenMarkers(readme, "RECENT:START", "RECENT:END", recentMd || "_No data found_");
+  readme = insertBetweenMarkers(readme, "CONTRIB:START", "CONTRIB:END", contribsMd);
 
   // Write if changed
   const old = await fs.readFile("README.md", "utf8");
@@ -209,6 +177,9 @@ const langAgg = aggregateLanguages(langs);
     console.log("No changes.");
   }
 } catch (e) {
-  console.error(e);
+  console.error("Update failed:", e?.status, e?.message);
+  if (e?.response?.data) {
+    console.error("Details:", JSON.stringify(e.response.data, null, 2));
+  }
   process.exit(1);
 }
